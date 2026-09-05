@@ -255,6 +255,8 @@
     "gamepad_xseries": "Xbox Series",
     "global_prep_cmd": "Command Preparations",
     "global_prep_cmd_desc": "Configure a list of commands to be executed before or after running any application. If any of the specified preparation commands fail, the application launch process will be aborted.",
+    "headless_mode": "Headless Mode",
+    "headless_mode_desc": "Create a SudoVDA virtual display when an app launches, matching the Moonlight client resolution and refresh rate. The display is removed only on Stop, not when the stream disconnects.",
     "hevc_mode": "HEVC Support",
     "hevc_mode_0": "Sunshine will advertise support for HEVC based on encoder capabilities (recommended)",
     "hevc_mode_1": "Sunshine will not advertise support for HEVC",

@@ -838,7 +838,31 @@ namespace display_device {
     }
 #endif
 
+    if (mapped_name.empty() && output_name.find("DISPLAY") != std::string::npos) {
+      // SudoVDA GDI names (`\\.\DISPLAY6`) are not device ids; pass them through for DXGI capture.
+      return output_name;
+    }
+
     return mapped_name;
+  }
+
+  std::string map_display_name(const std::string &display_name) {
+    std::lock_guard lock {DD_DATA.mutex};
+    if (!DD_DATA.sm_instance) {
+      return {};
+    }
+
+    const auto available_devices {DD_DATA.sm_instance->execute([](auto &settings_iface) {
+      return settings_iface.enumAvailableDevices();
+    })};
+
+    for (auto &device : available_devices) {
+      if (device.m_display_name == display_name) {
+        return device.m_device_id;
+      }
+    }
+
+    return {};
   }
 
   void configure_display(const config::video_t &video_config, const rtsp_stream::launch_session_t &session) {

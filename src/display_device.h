@@ -54,6 +54,13 @@ namespace display_device {
   [[nodiscard]] std::string map_output_name(const std::string &output_name);
 
   /**
+   * @brief Map a GDI display name to a libdisplaydevice device id.
+   * @param display_name GDI name such as `\\.\DISPLAY6`.
+   * @return Device id for `config::video.output_name`, or empty if not enumerated yet.
+   */
+  [[nodiscard]] std::string map_display_name(const std::string &display_name);
+
+  /**
    * @brief Ask the platform to wake displays before detection or capture.
    * @param display_name Platform capture selector.
    * @param timeout Maximum time to wait for platform-specific wake detection.

@@ -112,13 +112,22 @@ const config = ref(props.config)
         :config="config"
     />
 
-    <!-- SudoVDA Driver Status (F1: read-only bind, no ADD) -->
+    <!-- SudoVDA Driver Status (F1: read-only bind) -->
     <div class="alert" :class="[vdisplay ? 'alert-warning' : 'alert-success']" v-if="platform === 'windows'">
       {{ $t('config.sudovda_status') }}: {{ currentDriverStatus }}
     </div>
     <div class="form-text" v-if="platform === 'windows' && vdisplay">
       {{ $t('config.sudovda_status_desc') }}
     </div>
+
+    <!-- Headless Mode: session VDA on /launch, REMOVE only on Stop -->
+    <Checkbox class="mb-3"
+              id="headless_mode"
+              locale-prefix="config"
+              v-model="config.headless_mode"
+              default="true"
+              v-if="platform === 'windows'"
+    ></Checkbox>
 
   </div>
 </template>

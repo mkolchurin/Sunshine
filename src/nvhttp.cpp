@@ -1331,6 +1331,11 @@ namespace nvhttp {
       // The display should be restored in case something fails as there are no other sessions.
       revert_display_configuration = true;
 
+#ifdef _WIN32
+      // Headless VDA is created in proc::execute (after its initial terminate).
+      // Probe must run after ADD so NVENC sees the 4070 output.
+      if (!config::video.headless_mode) {
+#endif
       // We want to prepare display only if there are no active sessions at
       // the moment. This should be done before probing encoders as it could
       // change the active displays.
@@ -1347,6 +1352,9 @@ namespace nvhttp {
 
         return;
       }
+#ifdef _WIN32
+      }
+#endif
     }
 
     auto encryption_mode = net::encryption_mode_for_address(request->remote_endpoint().address());
@@ -1443,6 +1451,11 @@ namespace nvhttp {
     const auto launch_session = make_launch_session(host_audio, args);
 
     if (no_active_sessions) {
+#ifdef _WIN32
+      if (proc::proc.virtual_display) {
+        BOOST_LOG(info) << "SudoVDA: resume keeps existing virtual display";
+      } else {
+#endif
       // We want to prepare display only if there are no active sessions at
       // the moment. This should be done before probing encoders as it could
       // change the active displays.
@@ -1459,6 +1472,9 @@ namespace nvhttp {
 
         return;
       }
+#ifdef _WIN32
+      }
+#endif
     }
 
     auto encryption_mode = net::encryption_mode_for_address(request->remote_endpoint().address());

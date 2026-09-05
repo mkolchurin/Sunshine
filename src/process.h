@@ -98,6 +98,13 @@ namespace proc {
   public:
     KITTY_DEFAULT_CONSTR_MOVE_THROW(proc_t)
 
+#ifdef _WIN32
+    bool virtual_display = false;  ///< Session owns a SudoVDA monitor; resume must not ADD again.
+    GUID display_guid {};  ///< Persistent monitor GUID (Moonlight uniqueid).
+    std::string display_name;  ///< GDI name of the session virtual display.
+    std::string initial_output_name;  ///< `config::video.output_name` before VDA capture override.
+#endif
+
     /**
      * @brief Construct a process manager.
      *

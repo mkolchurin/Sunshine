@@ -5,9 +5,11 @@
 #define BOOST_BIND_GLOBAL_PLACEHOLDERS
 
 // standard includes
+#include <cstring>
 #include <filesystem>
 #include <string>
 #include <thread>
+#include <tuple>
 #include <vector>
 
 // lib includes
@@ -31,6 +33,8 @@
 #include "process.h"
 #include "system_tray.h"
 #include "utility.h"
+#include "uuid.h"
+#include "video.h"
 
 #ifdef _WIN32
   // from_utf8() string conversion function
@@ -63,6 +67,88 @@ namespace proc {
         onVDisplayWatchdogFailed();
       }
     }
+  }
+
+  GUID guid_from_client_id(const std::string &id) {
+    GUID guid {};
+    if (id.size() == 36) {
+      try {
+        const auto uuid = uuid_util::uuid_t::parse(id);
+        std::memcpy(&guid, &uuid, sizeof(GUID));
+        return guid;
+      } catch (const std::exception &) {
+      }
+    }
+
+    unsigned char digest[32] {};
+    unsigned int digest_len = 0;
+    EVP_Digest(id.data(), id.size(), digest, &digest_len, EVP_sha256(), nullptr);
+    std::memcpy(&guid, digest, sizeof(GUID));
+    return guid;
+  }
+
+  bool prepare_session_virtual_display(rtsp_stream::launch_session_t &launch_session) {
+    if (vDisplayDriverStatus != VDISPLAY::DRIVER_STATUS::OK) {
+      initVDisplayDriver();
+    }
+    if (vDisplayDriverStatus != VDISPLAY::DRIVER_STATUS::OK) {
+      BOOST_LOG(error) << "SudoVDA: driver not ready, session VDA skipped";
+      return false;
+    }
+
+    proc.initial_output_name = config::video.output_name;
+    VDISPLAY::setRenderAdapterByName(utf_utils::from_utf8(config::video.adapter_name));
+
+    const std::string device_uuid_str = launch_session.unique_id.empty() ? "unknown"s : launch_session.unique_id;
+    proc.display_guid = guid_from_client_id(device_uuid_str);
+
+    int width = launch_session.width;
+    int height = launch_session.height;
+    int fps = launch_session.fps;
+    if (!width || !height || !fps) {
+      BOOST_LOG(info) << "SudoVDA: missing client mode, fallback 1920x1080x60";
+      width = width ? width : 1920;
+      height = height ? height : 1080;
+      fps = fps ? fps : 60;
+    }
+
+    int target_fps = fps;
+    if (target_fps < 1000) {
+      target_fps *= 1000;
+    }
+
+    const auto device_name = launch_session.client_name.empty() ? "SunshineDisplay"s : launch_session.client_name;
+    auto vdisplayName = VDISPLAY::createVirtualDisplay(
+      device_uuid_str.c_str(),
+      device_name.c_str(),
+      static_cast<uint32_t>(width),
+      static_cast<uint32_t>(height),
+      static_cast<uint32_t>(target_fps),
+      proc.display_guid
+    );
+
+    // Track GUID even if GDI name is late so terminate can REMOVE.
+    proc.virtual_display = true;
+
+    if (vdisplayName.empty()) {
+      BOOST_LOG(warning) << "SudoVDA: session ADD failed or GDI name not ready";
+      return false;
+    }
+
+    proc.display_name = utf_utils::to_utf8(vdisplayName);
+    VDISPLAY::changeDisplaySettings(vdisplayName.c_str(), width, height, target_fps);
+
+    std::string mapped;
+    for (int i = 0; i < 8 && mapped.empty(); ++i) {
+      mapped = display_device::map_display_name(proc.display_name);
+      if (mapped.empty()) {
+        std::this_thread::sleep_for(50ms);
+      }
+    }
+    config::video.output_name = mapped.empty() ? proc.display_name : mapped;
+    BOOST_LOG(info) << "SudoVDA: session display " << proc.display_name
+                    << " capture output_name=" << config::video.output_name;
+    return true;
   }
 #endif
 
@@ -233,6 +319,20 @@ namespace proc {
       terminate();
     });
 
+#ifdef _WIN32
+    if (config::video.headless_mode) {
+      prepare_session_virtual_display(*launch_session);
+      display_device::configure_display(config::video, *launch_session);
+      if (virtual_display) {
+        std::ignore = display_device::reset_persistence();
+      }
+      if (rtsp_stream::session_count() == 0 && video::probe_encoders()) {
+        BOOST_LOG(error) << "SudoVDA: encoder probe failed after session VDA";
+        return 503;
+      }
+    }
+#endif
+
     for (; _app_prep_it != std::end(_app.prep_cmds); ++_app_prep_it) {
       auto &cmd = *_app_prep_it;
 
@@ -376,6 +476,17 @@ namespace proc {
 
     bool has_run = _app_id > 0;
 
+#ifdef _WIN32
+    const bool used_vda = virtual_display;
+    if (used_vda && vDisplayDriverStatus == VDISPLAY::DRIVER_STATUS::OK) {
+      if (VDISPLAY::removeVirtualDisplay(display_guid)) {
+        BOOST_LOG(info) << "SudoVDA: session virtual display removed";
+      } else {
+        BOOST_LOG(warning) << "SudoVDA: session REMOVE failed";
+      }
+    }
+#endif
+
     // Only show the Stopped notification if we actually have an app to stop
     // Since terminate() is always run when a new app has started
     if (proc::proc.get_last_run_app_name().length() > 0 && has_run) {
@@ -383,8 +494,26 @@ namespace proc {
       system_tray::update_tray_stopped(proc::proc.get_last_run_app_name());
 #endif
 
+#ifdef _WIN32
+      if (used_vda) {
+        std::ignore = display_device::reset_persistence();
+      } else {
+        display_device::revert_configuration();
+      }
+#else
       display_device::revert_configuration();
+#endif
     }
+
+#ifdef _WIN32
+    if (used_vda) {
+      config::video.output_name = initial_output_name;
+    }
+    virtual_display = false;
+    display_guid = {};
+    display_name.clear();
+    initial_output_name.clear();
+#endif
 
     _app_id = -1;
   }

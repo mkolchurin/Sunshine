@@ -122,6 +122,7 @@ namespace config {
     std::string encoder;  ///< Encoder backend name selected by configuration.
     std::string adapter_name;  ///< Display adapter name selected in configuration.
     std::string output_name;  ///< Display output name selected in configuration.
+    bool headless_mode;  ///< Create a SudoVDA virtual display at app launch (Windows).
 
     /**
      * @brief Display-device integration settings.
