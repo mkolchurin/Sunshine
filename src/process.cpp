@@ -151,7 +151,33 @@ namespace proc {
     }
     config::video.output_name = mapped.empty() ? proc.display_name : mapped;
     BOOST_LOG(info) << "SudoVDA: session display " << proc.display_name
-                    << " capture output_name=" << config::video.output_name;
+                    << " capture output_name=" << config::video.output_name
+                    << " hdrMode=" << (launch_session.enable_hdr ? "1" : "0");
+
+    const auto hdr_name = proc.display_name;
+    const bool enable_hdr = launch_session.enable_hdr;
+    std::thread([hdr_name, enable_hdr]() {
+      auto retry = 200ms;
+      const auto wname = utf_utils::from_utf8(hdr_name);
+      for (int i = 0; i < 6; ++i) {
+        proc.initial_hdr = VDISPLAY::getDisplayHDRByName(wname.c_str());
+        if (VDISPLAY::setDisplayHDRByName(wname.c_str(), false)) {
+          if (enable_hdr) {
+            if (VDISPLAY::setDisplayHDRByName(wname.c_str(), true)) {
+              BOOST_LOG(info) << "SudoVDA: HDR enabled (hdrMode) for " << hdr_name;
+            } else {
+              BOOST_LOG(warning) << "SudoVDA: HDR enable failed for " << hdr_name;
+            }
+          } else {
+            BOOST_LOG(info) << "SudoVDA: panel HDR off (hdrMode=0) for " << hdr_name;
+          }
+          return;
+        }
+        std::this_thread::sleep_for(retry);
+        retry *= 2;
+      }
+      BOOST_LOG(warning) << "SudoVDA: HDR toggle timed out for " << hdr_name;
+    }).detach();
 
     return true;
   }
@@ -483,6 +509,12 @@ namespace proc {
 
 #ifdef _WIN32
     const bool used_vda = virtual_display;
+    if (used_vda && !display_name.empty()) {
+      const auto wname = utf_utils::from_utf8(display_name);
+      if (VDISPLAY::setDisplayHDRByName(wname.c_str(), initial_hdr)) {
+        BOOST_LOG(info) << "SudoVDA: HDR reverted for " << display_name;
+      }
+    }
     if (used_vda && vDisplayDriverStatus == VDISPLAY::DRIVER_STATUS::OK) {
       if (VDISPLAY::removeVirtualDisplay(display_guid)) {
         BOOST_LOG(info) << "SudoVDA: session virtual display removed";
@@ -518,6 +550,7 @@ namespace proc {
     display_guid = {};
     display_name.clear();
     initial_output_name.clear();
+    initial_hdr = false;
 #endif
 
     _app_id = -1;

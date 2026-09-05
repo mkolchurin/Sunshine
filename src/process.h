@@ -103,6 +103,7 @@ namespace proc {
     GUID display_guid {};  ///< Persistent monitor GUID (Moonlight uniqueid).
     std::string display_name;  ///< GDI name of the session virtual display.
     std::string initial_output_name;  ///< `config::video.output_name` before VDA capture override.
+    bool initial_hdr = false;  ///< Panel HDR before the session toggle; restored on terminate.
 #endif
 
     /**

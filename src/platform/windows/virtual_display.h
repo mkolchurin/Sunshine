@@ -88,4 +88,15 @@ namespace VDISPLAY {
    * @return Win32 status from the last CDS call, or `ERROR_INVALID_PARAMETER`.
    */
   LONG changeDisplaySettings(const wchar_t *deviceName, int width, int height, int refresh_rate);
+
+  /**
+   * @brief Whether Advanced Color (HDR) is active on the named GDI output.
+   */
+  bool getDisplayHDRByName(const wchar_t *displayName);
+
+  /**
+   * @brief Enable or disable Advanced Color on the named GDI output.
+   * @return `true` when CCD `DisplayConfigSetDeviceInfo` succeeded.
+   */
+  bool setDisplayHDRByName(const wchar_t *displayName, bool enableAdvancedColor);
 }  // namespace VDISPLAY

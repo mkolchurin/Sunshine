@@ -6,11 +6,14 @@
 #include "virtual_display.h"
 
 // standard includes
+#include <algorithm>
 #include <string_view>
 #include <thread>
+#include <vector>
 
 // lib includes
 #include <dxgi.h>
+#include <dxgi1_6.h>
 #include <sudovda/sudovda.h>
 #include <wrl/client.h>
 
@@ -248,5 +251,127 @@ namespace VDISPLAY {
     }
 
     return res;
+  }
+
+  namespace {
+    bool findDisplayIds(const wchar_t *displayName, LUID &adapterId, uint32_t &targetId) {
+      UINT32 pathCount = 0;
+      UINT32 modeCount = 0;
+      if (GetDisplayConfigBufferSizes(QDC_ONLY_ACTIVE_PATHS, &pathCount, &modeCount)) {
+        return false;
+      }
+
+      std::vector<DISPLAYCONFIG_PATH_INFO> paths(pathCount);
+      std::vector<DISPLAYCONFIG_MODE_INFO> modes(modeCount);
+      if (QueryDisplayConfig(QDC_ONLY_ACTIVE_PATHS, &pathCount, paths.data(), &modeCount, modes.data(), nullptr)) {
+        return false;
+      }
+
+      auto path = std::find_if(paths.begin(), paths.end(), [&displayName](const DISPLAYCONFIG_PATH_INFO &candidate) {
+        DISPLAYCONFIG_SOURCE_DEVICE_NAME sourceName {};
+        sourceName.header.type = DISPLAYCONFIG_DEVICE_INFO_GET_SOURCE_NAME;
+        sourceName.header.size = sizeof(sourceName);
+        sourceName.header.adapterId = candidate.sourceInfo.adapterId;
+        sourceName.header.id = candidate.sourceInfo.id;
+        if (DisplayConfigGetDeviceInfo(&sourceName.header) != ERROR_SUCCESS) {
+          return false;
+        }
+        return std::wstring_view(displayName) == sourceName.viewGdiDeviceName;
+      });
+
+      if (path == paths.end()) {
+        return false;
+      }
+
+      adapterId = path->sourceInfo.adapterId;
+      targetId = path->targetInfo.id;
+      return true;
+    }
+
+    bool getDisplayHDR(const LUID &adapterLuid, const wchar_t *displayName) {
+      Microsoft::WRL::ComPtr<IDXGIFactory1> factory;
+      if (FAILED(CreateDXGIFactory1(IID_PPV_ARGS(&factory)))) {
+        return false;
+      }
+
+      for (UINT adapterIdx = 0;; ++adapterIdx) {
+        Microsoft::WRL::ComPtr<IDXGIAdapter1> adapter;
+        const HRESULT hr = factory->EnumAdapters1(adapterIdx, adapter.ReleaseAndGetAddressOf());
+        if (hr == DXGI_ERROR_NOT_FOUND) {
+          break;
+        }
+        if (FAILED(hr)) {
+          break;
+        }
+
+        DXGI_ADAPTER_DESC1 adapterDesc {};
+        if (FAILED(adapter->GetDesc1(&adapterDesc))) {
+          continue;
+        }
+        if (adapterDesc.AdapterLuid.LowPart != adapterLuid.LowPart || adapterDesc.AdapterLuid.HighPart != adapterLuid.HighPart) {
+          continue;
+        }
+
+        const std::wstring_view displayNameView {displayName};
+        for (UINT outputIdx = 0;; ++outputIdx) {
+          Microsoft::WRL::ComPtr<IDXGIOutput> output;
+          const HRESULT outHr = adapter->EnumOutputs(outputIdx, output.ReleaseAndGetAddressOf());
+          if (outHr == DXGI_ERROR_NOT_FOUND) {
+            break;
+          }
+          if (FAILED(outHr) || !output) {
+            continue;
+          }
+
+          DXGI_OUTPUT_DESC outputDesc {};
+          if (FAILED(output->GetDesc(&outputDesc))) {
+            continue;
+          }
+
+          MONITORINFOEXW monitorInfo {};
+          monitorInfo.cbSize = sizeof(monitorInfo);
+          if (!GetMonitorInfoW(outputDesc.Monitor, &monitorInfo) || displayNameView != monitorInfo.szDevice) {
+            continue;
+          }
+
+          Microsoft::WRL::ComPtr<IDXGIOutput6> output6;
+          if (FAILED(output.As(&output6)) || !output6) {
+            return false;
+          }
+          DXGI_OUTPUT_DESC1 desc1 {};
+          if (FAILED(output6->GetDesc1(&desc1))) {
+            return false;
+          }
+          return desc1.ColorSpace == DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020;
+        }
+        return false;
+      }
+      return false;
+    }
+  }  // namespace
+
+  bool getDisplayHDRByName(const wchar_t *displayName) {
+    LUID adapterId {};
+    uint32_t targetId = 0;
+    if (!findDisplayIds(displayName, adapterId, targetId)) {
+      return false;
+    }
+    return getDisplayHDR(adapterId, displayName);
+  }
+
+  bool setDisplayHDRByName(const wchar_t *displayName, bool enableAdvancedColor) {
+    LUID adapterId {};
+    uint32_t targetId = 0;
+    if (!findDisplayIds(displayName, adapterId, targetId)) {
+      return false;
+    }
+
+    DISPLAYCONFIG_SET_ADVANCED_COLOR_STATE setHdrInfo {};
+    setHdrInfo.header.type = DISPLAYCONFIG_DEVICE_INFO_SET_ADVANCED_COLOR_STATE;
+    setHdrInfo.header.size = sizeof(setHdrInfo);
+    setHdrInfo.header.adapterId = adapterId;
+    setHdrInfo.header.id = targetId;
+    setHdrInfo.enableAdvancedColor = enableAdvancedColor;
+    return DisplayConfigSetDeviceInfo(&setHdrInfo.header) == ERROR_SUCCESS;
   }
 }  // namespace VDISPLAY
