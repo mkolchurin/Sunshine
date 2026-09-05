@@ -123,6 +123,7 @@ namespace config {
     std::string adapter_name;  ///< Display adapter name selected in configuration.
     std::string output_name;  ///< Display output name selected in configuration.
     bool headless_mode;  ///< Create a SudoVDA virtual display at app launch (Windows).
+    bool double_refreshrate;  ///< Double VDA panel Hz vs client fps (Windows, default off).
 
     /**
      * @brief Display-device integration settings.

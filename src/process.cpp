@@ -116,6 +116,10 @@ namespace proc {
     if (target_fps < 1000) {
       target_fps *= 1000;
     }
+    if (config::video.double_refreshrate) {
+      target_fps *= 2;
+      BOOST_LOG(info) << "SudoVDA: double_refreshrate, panel millihertz=" << target_fps;
+    }
 
     const auto device_name = launch_session.client_name.empty() ? "SunshineDisplay"s : launch_session.client_name;
     auto vdisplayName = VDISPLAY::createVirtualDisplay(
@@ -148,6 +152,7 @@ namespace proc {
     config::video.output_name = mapped.empty() ? proc.display_name : mapped;
     BOOST_LOG(info) << "SudoVDA: session display " << proc.display_name
                     << " capture output_name=" << config::video.output_name;
+
     return true;
   }
 #endif

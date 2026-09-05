@@ -225,6 +225,8 @@
     "dd_wa_hdr_toggle_delay_desc_2": "If the value is set to 0, the workaround is disabled (default). If the value is between 0 and 3000 milliseconds, Sunshine will turn off HDR, wait for the specified amount of time and then turn HDR on again. The recommended delay time is around 500 milliseconds in most cases.",
     "dd_wa_hdr_toggle_delay_desc_3": "DO NOT use this workaround unless you actually have issues with HDR as it directly impacts stream start time!",
     "dd_wa_hdr_toggle_delay": "High-contrast workaround for HDR",
+    "double_refreshrate": "Double refresh rate for virtual display",
+    "double_refreshrate_desc": "When creating a SudoVDA display, set the panel to 2× the client fps. The stream still uses the client rate. Can reduce stutter on some setups; leave off if the panel or client misbehaves.",
     "ds4_back_as_touchpad_click": "Map Back/Select to Touchpad Click",
     "ds4_back_as_touchpad_click_desc": "When using PlayStation-style gamepad emulation, map Back/Select to Touchpad Click",
     "virtualhid_randomize_mac": "Randomize virtual controller MAC",

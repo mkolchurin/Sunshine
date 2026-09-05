@@ -129,6 +129,14 @@ const config = ref(props.config)
               v-if="platform === 'windows'"
     ></Checkbox>
 
+    <Checkbox class="mb-3"
+              id="double_refreshrate"
+              locale-prefix="config"
+              v-model="config.double_refreshrate"
+              default="false"
+              v-if="platform === 'windows'"
+    ></Checkbox>
+
   </div>
 </template>
 
