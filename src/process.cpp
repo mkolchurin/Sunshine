@@ -169,7 +169,13 @@ namespace proc {
               BOOST_LOG(warning) << "SudoVDA: HDR enable failed for " << hdr_name;
             }
           } else {
-            BOOST_LOG(info) << "SudoVDA: panel HDR off (hdrMode=0) for " << hdr_name;
+            if (VDISPLAY::setDisplayWCGByName(wname.c_str(), true)) {
+              BOOST_LOG(info) << "SudoVDA: WCG 10-bit SDR for " << hdr_name
+                              << " bitsPerColorChannel=" << VDISPLAY::getDisplayBitsPerColorChannel(wname.c_str());
+            } else {
+              BOOST_LOG(warning) << "SudoVDA: WCG enable failed for " << hdr_name
+                                 << " bitsPerColorChannel=" << VDISPLAY::getDisplayBitsPerColorChannel(wname.c_str());
+            }
           }
           return;
         }

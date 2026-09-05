@@ -374,4 +374,48 @@ namespace VDISPLAY {
     setHdrInfo.enableAdvancedColor = enableAdvancedColor;
     return DisplayConfigSetDeviceInfo(&setHdrInfo.header) == ERROR_SUCCESS;
   }
+
+  namespace {
+    // Win11 24H2 CCD packets; MinGW wingdi.h may lack the names.
+    constexpr auto kSetWcgState = static_cast<DISPLAYCONFIG_DEVICE_INFO_TYPE>(17);
+
+    struct set_wcg_state_t {
+      DISPLAYCONFIG_DEVICE_INFO_HEADER header;
+      UINT32 enableWcg;
+    };
+  }  // namespace
+
+  bool setDisplayWCGByName(const wchar_t *displayName, bool enableWcg) {
+    LUID adapterId {};
+    uint32_t targetId = 0;
+    if (!findDisplayIds(displayName, adapterId, targetId)) {
+      return false;
+    }
+
+    set_wcg_state_t setWcg {};
+    setWcg.header.type = kSetWcgState;
+    setWcg.header.size = sizeof(setWcg);
+    setWcg.header.adapterId = adapterId;
+    setWcg.header.id = targetId;
+    setWcg.enableWcg = enableWcg ? 1u : 0u;
+    return DisplayConfigSetDeviceInfo(&setWcg.header) == ERROR_SUCCESS;
+  }
+
+  UINT32 getDisplayBitsPerColorChannel(const wchar_t *displayName) {
+    LUID adapterId {};
+    uint32_t targetId = 0;
+    if (!findDisplayIds(displayName, adapterId, targetId)) {
+      return 0;
+    }
+
+    DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO info {};
+    info.header.type = DISPLAYCONFIG_DEVICE_INFO_GET_ADVANCED_COLOR_INFO;
+    info.header.size = sizeof(info);
+    info.header.adapterId = adapterId;
+    info.header.id = targetId;
+    if (DisplayConfigGetDeviceInfo(&info.header) != ERROR_SUCCESS) {
+      return 0;
+    }
+    return info.bitsPerColorChannel;
+  }
 }  // namespace VDISPLAY

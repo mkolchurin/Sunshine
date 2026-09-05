@@ -99,4 +99,14 @@ namespace VDISPLAY {
    * @return `true` when CCD `DisplayConfigSetDeviceInfo` succeeded.
    */
   bool setDisplayHDRByName(const wchar_t *displayName, bool enableAdvancedColor);
+
+  /**
+   * @brief Enable Win11 WCG / 10-bit SDR (CCD `SET_WCG_STATE`) without HDR PQ.
+   */
+  bool setDisplayWCGByName(const wchar_t *displayName, bool enableWcg);
+
+  /**
+   * @brief CCD `bitsPerColorChannel` for the named output, or 0 if unknown.
+   */
+  UINT32 getDisplayBitsPerColorChannel(const wchar_t *displayName);
 }  // namespace VDISPLAY

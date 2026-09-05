@@ -458,6 +458,14 @@ int main(int argc, char *argv[]) {
         }
         config::video.output_name = mapped.empty() ? gdi : mapped;
         BOOST_LOG(info) << "SudoVDA: probe capture output_name=" << config::video.output_name;
+        if (VDISPLAY::setDisplayWCGByName(vdisplayName.c_str(), true)) {
+          std::this_thread::sleep_for(100ms);
+          BOOST_LOG(info) << "SudoVDA: probe WCG bitsPerColorChannel="
+                          << VDISPLAY::getDisplayBitsPerColorChannel(vdisplayName.c_str());
+        } else {
+          BOOST_LOG(warning) << "SudoVDA: probe WCG failed bitsPerColorChannel="
+                             << VDISPLAY::getDisplayBitsPerColorChannel(vdisplayName.c_str());
+        }
       }
 
       if (video::probe_encoders()) {
