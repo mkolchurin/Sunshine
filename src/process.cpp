@@ -159,30 +159,32 @@ namespace proc {
     std::thread([hdr_name, enable_hdr]() {
       auto retry = 200ms;
       const auto wname = utf_utils::from_utf8(hdr_name);
-      for (int i = 0; i < 6; ++i) {
+      for (int i = 0; i < 8; ++i) {
         proc.initial_hdr = VDISPLAY::getDisplayHDRByName(wname.c_str());
-        if (VDISPLAY::setDisplayHDRByName(wname.c_str(), false)) {
-          if (enable_hdr) {
-            if (VDISPLAY::setDisplayHDRByName(wname.c_str(), true)) {
-              BOOST_LOG(info) << "SudoVDA: HDR enabled (hdrMode) for " << hdr_name;
-            } else {
-              BOOST_LOG(warning) << "SudoVDA: HDR enable failed for " << hdr_name;
-            }
-          } else {
-            if (VDISPLAY::setDisplayWCGByName(wname.c_str(), true)) {
-              BOOST_LOG(info) << "SudoVDA: WCG 10-bit SDR for " << hdr_name
-                              << " bitsPerColorChannel=" << VDISPLAY::getDisplayBitsPerColorChannel(wname.c_str());
-            } else {
-              BOOST_LOG(warning) << "SudoVDA: WCG enable failed for " << hdr_name
-                                 << " bitsPerColorChannel=" << VDISPLAY::getDisplayBitsPerColorChannel(wname.c_str());
-            }
-          }
-          return;
+        VDISPLAY::setDisplayWCGByName(wname.c_str(), true);
+        // Win11 24H2: PnP HDR-capable VDA turns HDR on by itself. ACM/WCG leaves
+        // SET_ADVANCED_COLOR_STATE as a no-op — use SET_HDR_STATE.
+        if (!VDISPLAY::setDisplayHdrStateByName(wname.c_str(), enable_hdr)) {
+          VDISPLAY::setDisplayHDRByName(wname.c_str(), enable_hdr);
         }
         std::this_thread::sleep_for(retry);
+        const bool hdr_now = VDISPLAY::getDisplayHDRByName(wname.c_str());
+        const auto bits = VDISPLAY::getDisplayBitsPerColorChannel(wname.c_str());
+        if (hdr_now == enable_hdr) {
+          BOOST_LOG(info) << "SudoVDA: panel HDR=" << (hdr_now ? "1" : "0")
+                          << " bitsPerColorChannel=" << bits
+                          << " hdrMode=" << (enable_hdr ? "1" : "0")
+                          << " for " << hdr_name;
+          return;
+        }
         retry *= 2;
+        if (retry > 800ms) {
+          retry = 800ms;
+        }
       }
-      BOOST_LOG(warning) << "SudoVDA: HDR toggle timed out for " << hdr_name;
+      BOOST_LOG(warning) << "SudoVDA: HDR state not settled for " << hdr_name
+                         << " wanted hdrMode=" << (enable_hdr ? "1" : "0")
+                         << " now=" << (VDISPLAY::getDisplayHDRByName(wname.c_str()) ? "1" : "0");
     }).detach();
 
     return true;
@@ -517,7 +519,8 @@ namespace proc {
     const bool used_vda = virtual_display;
     if (used_vda && !display_name.empty()) {
       const auto wname = utf_utils::from_utf8(display_name);
-      if (VDISPLAY::setDisplayHDRByName(wname.c_str(), initial_hdr)) {
+      if (VDISPLAY::setDisplayHdrStateByName(wname.c_str(), initial_hdr) ||
+          VDISPLAY::setDisplayHDRByName(wname.c_str(), initial_hdr)) {
         BOOST_LOG(info) << "SudoVDA: HDR reverted for " << display_name;
       }
     }

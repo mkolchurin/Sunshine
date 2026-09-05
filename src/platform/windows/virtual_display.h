@@ -101,6 +101,11 @@ namespace VDISPLAY {
   bool setDisplayHDRByName(const wchar_t *displayName, bool enableAdvancedColor);
 
   /**
+   * @brief Win11 24H2 `SET_HDR_STATE` — HDR PQ independently of WCG/ACM.
+   */
+  bool setDisplayHdrStateByName(const wchar_t *displayName, bool enableHdr);
+
+  /**
    * @brief Enable Win11 WCG / 10-bit SDR (CCD `SET_WCG_STATE`) without HDR PQ.
    */
   bool setDisplayWCGByName(const wchar_t *displayName, bool enableWcg);
