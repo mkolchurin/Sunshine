@@ -25,6 +25,10 @@
 #include "rtsp.h"
 #include "utility.h"
 
+#ifdef _WIN32
+  #include "platform/windows/virtual_display.h"
+#endif
+
 /**
  * @def DEFAULT_APP_IMAGE_PATH
  * @brief Macro for DEFAULT APP IMAGE PATH.
@@ -32,6 +36,10 @@
 #define DEFAULT_APP_IMAGE_PATH SUNSHINE_ASSETS_DIR "/box.png"
 
 namespace proc {
+#ifdef _WIN32
+  extern VDISPLAY::DRIVER_STATUS vDisplayDriverStatus;
+#endif
+
   /**
    * @brief Boost.Process pipe stream used for child-process I/O.
    */

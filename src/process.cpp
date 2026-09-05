@@ -35,6 +35,7 @@
 #ifdef _WIN32
   // from_utf8() string conversion function
   #include "platform/windows/utf_utils.h"
+  #include "platform/windows/virtual_display.h"
 
   // _SH constants for _wfsopen()
   #include <share.h>
@@ -45,6 +46,25 @@ namespace proc {
   namespace pt = boost::property_tree;
 
   proc_t proc;  ///< Global process registry used to track and terminate child processes.
+
+#ifdef _WIN32
+  VDISPLAY::DRIVER_STATUS vDisplayDriverStatus = VDISPLAY::DRIVER_STATUS::UNKNOWN;
+
+  void onVDisplayWatchdogFailed() {
+    BOOST_LOG(error) << "SudoVDA: watchdog ping failed, closing device";
+    vDisplayDriverStatus = VDISPLAY::DRIVER_STATUS::WATCHDOG_FAILED;
+    VDISPLAY::closeVDisplayDevice();
+  }
+
+  void initVDisplayDriver() {
+    vDisplayDriverStatus = VDISPLAY::openVDisplayDevice();
+    if (vDisplayDriverStatus == VDISPLAY::DRIVER_STATUS::OK) {
+      if (!VDISPLAY::startPingThread(onVDisplayWatchdogFailed)) {
+        onVDisplayWatchdogFailed();
+      }
+    }
+  }
+#endif
 
   /**
    * @brief RAII helper that runs shutdown cleanup when destroyed.
@@ -799,6 +819,19 @@ namespace proc {
    * @brief Refresh cached platform state from the operating system.
    */
   void refresh(const std::string &file_name) {
+#ifdef _WIN32
+    size_t fail_count = 0;
+    while (fail_count < 5 && vDisplayDriverStatus != VDISPLAY::DRIVER_STATUS::OK) {
+      initVDisplayDriver();
+      if (vDisplayDriverStatus == VDISPLAY::DRIVER_STATUS::OK) {
+        break;
+      }
+
+      fail_count += 1;
+      std::this_thread::sleep_for(1s);
+    }
+#endif
+
     auto proc_opt = proc::parse(file_name);
 
     if (proc_opt) {

@@ -107,6 +107,7 @@
         v-if="currentTab === 'av'"
         :config="config"
         :platform="platform"
+        :vdisplay="vdisplayStatus"
       >
       </audio-video>
 
@@ -203,6 +204,7 @@
         saved: false,
         restarted: false,
         config: null,
+        vdisplayStatus: 1,
         currentTab: "general",
         searchQuery: "",
         tabs: [ // TODO: Move the options to each Component instead, encapsulate.
@@ -424,6 +426,7 @@
         .then((r) => {
           this.config = r;
           this.platform = this.config.platform;
+          this.vdisplayStatus = this.config.vdisplayStatus ?? 1;
 
           var app = document.getElementById("app");
           if (this.platform === "windows") {
@@ -446,6 +449,7 @@
           delete this.config.platform;
           delete this.config.status;
           delete this.config.version;
+          delete this.config.vdisplayStatus;
 
           // TODO: let each tab's Component handle it's own data instead of doing it here
 

@@ -1,5 +1,5 @@
 <script setup>
-import {ref} from 'vue'
+import {ref, computed, inject} from 'vue'
 import {$tp} from '../../platform-i18n'
 import PlatformLayout from '../../PlatformLayout.vue'
 import AdapterNameSelector from './audiovideo/AdapterNameSelector.vue'
@@ -8,10 +8,26 @@ import DisplayDeviceOptions from "./audiovideo/DisplayDeviceOptions.vue";
 import DisplayModesSettings from "./audiovideo/DisplayModesSettings.vue";
 import Checkbox from "../../Checkbox.vue";
 
+const $t = inject('i18n').t;
+
 const props = defineProps([
   'platform',
   'config',
+  'vdisplay',
 ])
+
+const sudovdaStatusKey = {
+  0: 'config.sudovda_status_ready',
+  1: 'config.sudovda_status_unknown',
+  '-1': 'config.sudovda_status_failed',
+  '-2': 'config.sudovda_status_incompatible',
+  '-3': 'config.sudovda_status_watchdog',
+}
+
+const currentDriverStatus = computed(() => {
+  const key = sudovdaStatusKey[props.vdisplay] || sudovdaStatusKey[1]
+  return $t(key)
+})
 
 const config = ref(props.config)
 </script>
@@ -95,6 +111,14 @@ const config = ref(props.config)
         :platform="platform"
         :config="config"
     />
+
+    <!-- SudoVDA Driver Status (F1: read-only bind, no ADD) -->
+    <div class="alert" :class="[vdisplay ? 'alert-warning' : 'alert-success']" v-if="platform === 'windows'">
+      {{ $t('config.sudovda_status') }}: {{ currentDriverStatus }}
+    </div>
+    <div class="form-text" v-if="platform === 'windows' && vdisplay">
+      {{ $t('config.sudovda_status_desc') }}
+    </div>
 
   </div>
 </template>
