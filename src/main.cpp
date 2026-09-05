@@ -435,7 +435,7 @@ int main(int argc, char *argv[]) {
 
       VDISPLAY::setRenderAdapterByName(utf_utils::from_utf8(config::video.adapter_name));
 
-      VDISPLAY::createVirtualDisplay(
+      const auto vdisplayName = VDISPLAY::createVirtualDisplay(
         probe_uuid_str.c_str(),
         "Probe",
         800,
@@ -446,6 +446,20 @@ int main(int argc, char *argv[]) {
 
       std::this_thread::sleep_for(500ms);
 
+      const auto saved_output = config::video.output_name;
+      if (!vdisplayName.empty()) {
+        const auto gdi = utf_utils::to_utf8(vdisplayName);
+        std::string mapped;
+        for (int i = 0; i < 8 && mapped.empty(); ++i) {
+          mapped = display_device::map_display_name(gdi);
+          if (mapped.empty()) {
+            std::this_thread::sleep_for(50ms);
+          }
+        }
+        config::video.output_name = mapped.empty() ? gdi : mapped;
+        BOOST_LOG(info) << "SudoVDA: probe capture output_name=" << config::video.output_name;
+      }
+
       if (video::probe_encoders()) {
         if (allow_probing) {
           BOOST_LOG(error) << "Video failed to find working encoder: allow probing but failed"sv;
@@ -454,6 +468,7 @@ int main(int argc, char *argv[]) {
         }
       }
 
+      config::video.output_name = saved_output;
       VDISPLAY::removeVirtualDisplay(probe_guid);
     } else if (first_probe && !allow_probing) {
       BOOST_LOG(error) << "Video failed to find working encoder: probe failed and virtual display driver isn't initialized"sv;
