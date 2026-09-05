@@ -5,9 +5,11 @@
 // standard includes
 #include <codecvt>
 #include <csignal>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <thread>
 
 #ifdef __APPLE__
   #include <mach-o/dyld.h>
@@ -18,6 +20,7 @@
 
 // local includes
 #include "confighttp.h"
+#include "config.h"
 #include "display_device.h"
 #include "entry_handler.h"
 #include "globals.h"
@@ -28,7 +31,13 @@
 #include "process.h"
 #include "system_tray.h"
 #include "upnp.h"
+#include "uuid.h"
 #include "video.h"
+
+#ifdef _WIN32
+  #include "platform/windows/utf_utils.h"
+  #define PROBE_DISPLAY_UUID "38F72B96-B00C-4F21-8B6C-E1BFF1602B0E"
+#endif
 
 using namespace std::literals;
 
@@ -407,9 +416,54 @@ int main(int argc, char *argv[]) {
     BOOST_LOG(warning) << "No gamepad input is available"sv;
   }
 
-  if (video::probe_encoders()) {
+  const auto first_probe = video::probe_encoders();
+#ifdef _WIN32
+  const bool software_only = first_probe == 0 && video::last_encoder_name() == "software"sv;
+  if (first_probe || software_only) {
+    const bool allow_probing = video::allow_encoder_probing();
+    if (proc::vDisplayDriverStatus == VDISPLAY::DRIVER_STATUS::OK) {
+      std::string probe_uuid_str = PROBE_DISPLAY_UUID;
+      auto probe_uuid = uuid_util::uuid_t::parse(probe_uuid_str);
+      GUID probe_guid {};
+      std::memcpy(&probe_guid, &probe_uuid, sizeof(GUID));
+
+      if (software_only) {
+        BOOST_LOG(info) << "SudoVDA: only software encoder found, creating a temporary virtual display to probe NVENC"sv;
+      } else {
+        BOOST_LOG(info) << "SudoVDA: creating a temporary virtual display to probe for encoders"sv;
+      }
+
+      VDISPLAY::setRenderAdapterByName(utf_utils::from_utf8(config::video.adapter_name));
+
+      VDISPLAY::createVirtualDisplay(
+        probe_uuid_str.c_str(),
+        "Probe",
+        800,
+        600,
+        60,
+        probe_guid
+      );
+
+      std::this_thread::sleep_for(500ms);
+
+      if (video::probe_encoders()) {
+        if (allow_probing) {
+          BOOST_LOG(error) << "Video failed to find working encoder: allow probing but failed"sv;
+        } else {
+          BOOST_LOG(error) << "Video failed to find working encoder even after attempted with a virtual display"sv;
+        }
+      }
+
+      VDISPLAY::removeVirtualDisplay(probe_guid);
+    } else if (first_probe && !allow_probing) {
+      BOOST_LOG(error) << "Video failed to find working encoder: probe failed and virtual display driver isn't initialized"sv;
+    }
+  }
+#else
+  if (first_probe) {
     BOOST_LOG(error) << "Video failed to find working encoder"sv;
   }
+#endif
 
   if (http::init()) {
     BOOST_LOG(fatal) << "HTTP interface failed to initialize"sv;

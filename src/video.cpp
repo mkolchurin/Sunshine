@@ -33,6 +33,9 @@ extern "C" {
 #include "logging.h"
 #include "nvenc/nvenc_encoder.h"
 #include "platform/common.h"
+#ifdef _WIN32
+  #include "process.h"
+#endif
 #include "sync.h"
 #include "video.h"
 
@@ -46,36 +49,36 @@ using namespace std::literals;
 
 namespace video {
 
-  namespace {
-    /**
-     * @brief Check if we can allow probing for the encoders.
-     * @return True if there should be no issues with the probing, false if we should prevent it.
-     */
-    bool allow_encoder_probing() {
-      const auto devices {display_device::enumerate_devices()};
+  bool allow_encoder_probing() {
+    const auto devices {display_device::enumerate_devices()};
 
+    if (devices.empty()) {
+#ifdef _WIN32
+      // SudoVDA will add a temporary display for probing; block DXGI until then.
+      if (proc::vDisplayDriverStatus == VDISPLAY::DRIVER_STATUS::OK) {
+        return false;
+      }
+#endif
       // If there are no devices, then either the API is not working correctly or OS does not support the lib.
       // Either way we should not block the probing in this case as we can't tell what's wrong.
-      if (devices.empty()) {
-        return true;
-      }
-
-      // Since Windows 11 24H2, it is possible that there will be no active devices present
-      // for some reason (probably a bug). Trying to probe encoders in such a state locks/breaks the DXGI
-      // and also the display device for Windows. So we must have at least 1 active device.
-      const bool at_least_one_device_is_active = std::any_of(std::begin(devices), std::end(devices), [](const auto &device) {
-        // If device has additional info, it is active.
-        return static_cast<bool>(device.m_info);
-      });
-
-      if (at_least_one_device_is_active) {
-        return true;
-      }
-
-      BOOST_LOG(error) << "No display devices are active at the moment! Cannot probe the encoders.";
-      return false;
+      return true;
     }
-  }  // namespace
+
+    // Since Windows 11 24H2, it is possible that there will be no active devices present
+    // for some reason (probably a bug). Trying to probe encoders in such a state locks/breaks the DXGI
+    // and also the display device for Windows. So we must have at least 1 active device.
+    const bool at_least_one_device_is_active = std::any_of(std::begin(devices), std::end(devices), [](const auto &device) {
+      // If device has additional info, it is active.
+      return static_cast<bool>(device.m_info);
+    });
+
+    if (at_least_one_device_is_active) {
+      return true;
+    }
+
+    BOOST_LOG(error) << "No display devices are active at the moment! Cannot probe the encoders.";
+    return false;
+  }
 
   /**
    * @brief Release context resources.
@@ -3232,6 +3235,13 @@ namespace video {
 
     fg.disable();
     return true;
+  }
+
+  std::string_view last_encoder_name() {
+    if (!chosen_encoder) {
+      return {};
+    }
+    return chosen_encoder->name;
   }
 
   int probe_encoders() {

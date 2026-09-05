@@ -5,7 +5,11 @@
 #pragma once
 
 // standard includes
+#include <cstdint>
+#include <cstdio>
 #include <random>
+#include <stdexcept>
+#include <string>
 
 /**
  * @brief UUID utilities.
@@ -51,6 +55,51 @@ namespace uuid_util {
       std::default_random_engine engine {r()};
 
       return generate(engine);
+    }
+
+    /**
+     * @brief Parse a canonical UUID string `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`.
+     *
+     * @param uuid_str Canonical UUID text (length 36).
+     * @return UUID with the same byte layout as a Win32 `GUID` on little-endian.
+     */
+    static uuid_t parse(const std::string &uuid_str) {
+      if (uuid_str.length() != 36) {
+        throw std::invalid_argument("Invalid UUID string length");
+      }
+
+      uuid_t uuid {};
+      unsigned int data0 = 0;
+      unsigned int data1 = 0;
+      unsigned int data2 = 0;
+      unsigned int data3 = 0;
+      unsigned int data4a = 0;
+      unsigned int data4b = 0;
+
+      std::sscanf(
+        uuid_str.c_str(),
+        "%8x-%4x-%4x-%4x-%8x%4x",
+        &data0,
+        &data1,
+        &data2,
+        &data3,
+        &data4a,
+        &data4b
+      );
+
+      uuid.b32[0] = data0;
+      uuid.b16[2] = static_cast<std::uint16_t>(data1);
+      uuid.b16[3] = static_cast<std::uint16_t>(data2);
+      uuid.b8[8] = (data3 >> 8) & 0xFF;
+      uuid.b8[9] = data3 & 0xFF;
+      uuid.b8[10] = (data4a >> 24) & 0xFF;
+      uuid.b8[11] = (data4a >> 16) & 0xFF;
+      uuid.b8[12] = (data4a >> 8) & 0xFF;
+      uuid.b8[13] = data4a & 0xFF;
+      uuid.b8[14] = (data4b >> 8) & 0xFF;
+      uuid.b8[15] = data4b & 0xFF;
+
+      return uuid;
     }
 
     /**

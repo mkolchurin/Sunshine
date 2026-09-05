@@ -715,6 +715,12 @@ namespace video {
   bool validate_encoder(encoder_t &encoder, bool expect_failure);
 
   /**
+   * @brief Check if encoder probing is safe (at least one active display).
+   * @return False when probing would lock DXGI (Win11 24H2 headless / no outputs).
+   */
+  bool allow_encoder_probing();
+
+  /**
    * @brief Probe encoders and select the preferred encoder.
    * This is called once at startup and each time a stream is launched to
    * ensure the best encoder is selected. Encoder availability can change
@@ -724,6 +730,12 @@ namespace video {
    * @return 0 when a usable encoder is selected; nonzero when probing fails.
    */
   int probe_encoders();
+
+  /**
+   * @brief Name of the encoder selected by the last successful `probe_encoders`.
+   * @return Encoder name such as `nvenc` or `software`; empty if none chosen.
+   */
+  std::string_view last_encoder_name();
 
   // Several NTSC standard refresh rates are hardcoded here, because their
   // true rate requires a denominator of 1001. ffmpeg's av_d2q() would assume it could
