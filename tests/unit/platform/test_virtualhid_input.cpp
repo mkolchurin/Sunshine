@@ -848,16 +848,20 @@ TEST_F(VirtualHidDeviceTest, PlatformWrappersForwardToVirtualHidContext) {
   ASSERT_NE(platform_context.keyboard, nullptr);
 
   const platf::touch_port_t viewport {0, 0, 1280, 720, 1280, 720};
+#ifndef _WIN32
   platf::move_mouse(platform_input, 2, 3);
   EXPECT_EQ(platform_context.mouse->last_submitted_event().kind, lvh::MouseEventKind::relative_motion);
+#endif
   platf::abs_mouse(platform_input, viewport, 40.0F, 50.0F);
   EXPECT_EQ(platform_context.mouse->last_submitted_event().kind, lvh::MouseEventKind::absolute_motion);
+#ifndef _WIN32
   platf::button_mouse(platform_input, BUTTON_LEFT, false);
   EXPECT_EQ(platform_context.mouse->last_submitted_event().kind, lvh::MouseEventKind::button);
   platf::scroll(platform_input, 120);
   EXPECT_EQ(platform_context.mouse->last_submitted_event().kind, lvh::MouseEventKind::vertical_scroll);
   platf::hscroll(platform_input, -120);
   EXPECT_EQ(platform_context.mouse->last_submitted_event().kind, lvh::MouseEventKind::horizontal_scroll);
+#endif
   platf::keyboard_update(platform_input, 0x41, false, 0);
   EXPECT_EQ(platform_context.keyboard->last_submitted_event().key_code, 0x41);
   const std::string text = "wrapper";
@@ -865,10 +869,14 @@ TEST_F(VirtualHidDeviceTest, PlatformWrappersForwardToVirtualHidContext) {
   platf::unicode(platform_input, text.data(), static_cast<int>(text.size()));
   EXPECT_EQ(platform_context.keyboard->submit_count(), keyboard_count + 1);
 
-  config::input.gamepad = "ds5";
-  const auto capabilities = static_cast<std::uint16_t>(LI_CCAP_ACCEL | LI_CCAP_GYRO | LI_CCAP_TOUCHPAD | LI_CCAP_BATTERY_STATE);
   const platf::gamepad_id_t gamepad_id {0, 2};
-  const platf::gamepad_arrival_t gamepad_metadata {LI_CTYPE_PS, capabilities, 0};
+  const platf::gamepad_arrival_t gamepad_metadata {
+    LI_CTYPE_PS,
+    static_cast<std::uint16_t>(LI_CCAP_ACCEL | LI_CCAP_GYRO | LI_CCAP_TOUCHPAD | LI_CCAP_BATTERY_STATE),
+    0
+  };
+#ifndef _WIN32
+  config::input.gamepad = "ds5";
   ASSERT_EQ(platf::alloc_gamepad(platform_input, gamepad_id, gamepad_metadata, feedback_queue()), 0);
   auto *adapter = platf::virtualhid::gamepad_adapter_for_testing(platform_context, 0);
   ASSERT_NE(adapter, nullptr);
@@ -880,6 +888,7 @@ TEST_F(VirtualHidDeviceTest, PlatformWrappersForwardToVirtualHidContext) {
   EXPECT_TRUE(adapter->state().acceleration.has_value());
   platf::gamepad_battery(platform_input, {{0, 2}, LI_BATTERY_STATE_FULL, 100});
   EXPECT_TRUE(adapter->state().battery.has_value());
+#endif
 
   const auto &supported = platf::supported_gamepads(std::addressof(platform_input));
   ASSERT_FALSE(supported.empty());
@@ -891,6 +900,7 @@ TEST_F(VirtualHidDeviceTest, PlatformWrappersForwardToVirtualHidContext) {
   EXPECT_NE(platf::get_capabilities() & platf::platform_caps::controller_touch, 0U);
 #endif
 
+#ifndef _WIN32
   platf::free_gamepad(platform_input, 0);
   EXPECT_FALSE(platf::virtualhid::has_gamepad(platform_context, 0));
   platf::free_gamepad(platform_input, 0);
@@ -898,6 +908,7 @@ TEST_F(VirtualHidDeviceTest, PlatformWrappersForwardToVirtualHidContext) {
   platf::gamepad_touch(platform_input, {{0, 2}, LI_TOUCH_EVENT_DOWN, 1, 0.25F, 0.5F, 1.0F});
   platf::gamepad_motion(platform_input, {{0, 2}, LI_MOTION_TYPE_ACCEL, 1.0F, 2.0F, 3.0F});
   platf::gamepad_battery(platform_input, {{0, 2}, LI_BATTERY_STATE_FULL, 100});
+#endif
 
   auto platform_client = platf::allocate_client_input_context(platform_input);
   ASSERT_NE(platform_client, nullptr);

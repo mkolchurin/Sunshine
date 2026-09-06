@@ -540,7 +540,11 @@ INSTANTIATE_TEST_SUITE_P(
   testing::Values(
     invalid_license_request_t {"InvalidJson", "not-json", "Invalid license request"},
     invalid_license_request_t {"UnknownAction", R"({"action":"unknown"})", "Unknown license action"},
+#ifdef _WIN32
+    invalid_license_request_t {"MissingActivationKey", R"({"action":"activate","license_key":""})", "WinUHid has no Polar license"}
+#else
     invalid_license_request_t {"MissingActivationKey", R"({"action":"activate","license_key":""})", "License key is required"}
+#endif
   ),
   invalid_license_request_name
 );
@@ -1521,8 +1525,14 @@ TEST(ConfigHttpDriverStatusTest, BuildsLiveVirtualInputDriverStatus) {
   EXPECT_TRUE(virtualhid.contains("version_compatible"));
   EXPECT_TRUE(virtualhid.contains("backend_name"));
   EXPECT_TRUE(virtualhid.contains("requires_installed_driver"));
+#ifdef _WIN32
+  EXPECT_EQ(virtualhid["minimum_version"].get<std::string>(), "1");
+  EXPECT_EQ(virtualhid["supported_versions"].get<std::string>(), ">= 1");
+  EXPECT_EQ(virtualhid["backend_name"].get<std::string>(), "winuhid");
+#else
   EXPECT_EQ(virtualhid["minimum_version"].get<std::string>(), "2026.829.2338.54");  // NOSONAR(cpp:S1313): not an IP address
   EXPECT_EQ(virtualhid["supported_versions"].get<std::string>(), ">= 2026.829.2338.54");  // NOSONAR(cpp:S1313): not an IP address
+#endif
 
   const auto vigembus = confighttp::get_vigembus_driver_status();
   EXPECT_TRUE(vigembus.contains("installed"));
@@ -1557,12 +1567,20 @@ TEST_F(ConfigHttpTest, VirtualInputLicenseReturnsCurrentStatus) {
   const auto response = client->request("GET", "/virtual-input-license-test", "", headers);
   ASSERT_EQ(response->status_code, "200 OK");
   const auto body = nlohmann::json::parse(response->content.string());
+#ifdef _WIN32
+  EXPECT_EQ(body.at("backend").get<std::string>(), "winuhid");
+  EXPECT_TRUE(body.at("operation_ok").get<bool>());
+  EXPECT_TRUE(body.contains("interface_version"));
+  EXPECT_TRUE(body.contains("mouse"));
+  EXPECT_TRUE(body.contains("ps5"));
+#else
   EXPECT_TRUE(body.at("operation_ok").get<bool>());
   EXPECT_TRUE(body.at("service_available").get<bool>());
   EXPECT_EQ(body.at("state").get<std::string>(), "licensed");
   EXPECT_TRUE(body.at("licensed").get<bool>());
   EXPECT_EQ(body.at("active_devices").get<unsigned int>(), 2U);
   EXPECT_EQ(body.at("message").get<std::string>(), "Test license status");
+#endif
 }
 
 // Test: every public license state maps to a stable Web UI state string

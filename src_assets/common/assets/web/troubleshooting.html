@@ -94,21 +94,7 @@
                   <th scope="row">{{ $t('troubleshooting.virtualhid_driver') }}</th>
                   <td>{{ driverVersion(virtualhid) }}</td>
                   <td>
-                    <div class="driver-release-state"
-                         :class="driverReleaseStateClass(virtualhid, virtualhidRelease)"
-                         :title="driverReleaseStatusText(virtualhid, virtualhidRelease)"
-                         aria-live="polite">
-                      <refresh-cw v-if="virtualhidRelease.loading"
-                                  :size="17"
-                                  class="driver-release-spinning"></refresh-cw>
-                      <check-circle v-else-if="driverReleaseState(virtualhid, virtualhidRelease) === 'current'"
-                                    :size="17"></check-circle>
-                      <alert-triangle v-else-if="driverReleaseState(virtualhid, virtualhidRelease) === 'outdated'"
-                                      :size="17"></alert-triangle>
-                      <alert-circle v-else :size="17"></alert-circle>
-                      <span>{{ driverLatestVersion(virtualhidRelease) }}</span>
-                    </div>
-                    <small class="driver-release-detail">{{ driverReleaseStatusText(virtualhid, virtualhidRelease) }}</small>
+                    <span class="text-body-secondary">{{ $t('troubleshooting.driver_release_none') }}</span>
                   </td>
                   <td>{{ virtualhid.supported_versions }}</td>
                   <td>
@@ -122,7 +108,7 @@
                        target="_blank"
                        rel="noopener noreferrer">
                       <download :size="17"></download>
-                      {{ $t('troubleshooting.driver_download') }}
+                      {{ $t('troubleshooting.driver_sources') }}
                     </a>
                   </td>
                 </tr>
@@ -168,6 +154,56 @@
         </section>
 
         <section class="virtualhid-license-section" aria-labelledby="virtualhid-license">
+          <div v-if="virtualhidLicense.backend === 'winuhid'">
+            <div class="virtualhid-license-heading">
+              <div>
+                <h3 id="virtualhid-license" class="h4 mb-1">{{ $t('troubleshooting.winuhid') }}</h3>
+                <p class="mb-0">{{ $t('troubleshooting.winuhid_desc') }}</p>
+              </div>
+              <span :class="licenseStatusClass()">{{ licenseStatusText() }}</span>
+            </div>
+
+            <div class="alert alert-danger alert-inline" role="alert" v-if="licenseError">
+              <alert-circle :size="18" class="icon flex-shrink-0"></alert-circle>
+              <span>{{ licenseError }}</span>
+            </div>
+            <div class="alert alert-warning alert-inline" role="alert" v-else-if="!virtualhidLicense.service_available">
+              <alert-triangle :size="18" class="icon flex-shrink-0"></alert-triangle>
+              <span>{{ virtualhidLicense.message || $t('troubleshooting.winuhid_unavailable') }}</span>
+            </div>
+
+            <div class="virtualhid-license-stats">
+              <dl class="virtualhid-license-stat">
+                <dt>{{ $t('troubleshooting.winuhid_interface') }}</dt>
+                <dd>{{ virtualhidLicense.interface_version || $t('troubleshooting.virtualhid_license_not_reported') }}</dd>
+              </dl>
+              <dl class="virtualhid-license-stat">
+                <dt>{{ $t('troubleshooting.winuhid_mouse') }}</dt>
+                <dd>{{ virtualhidLicense.mouse ? $t('troubleshooting.winuhid_mouse_hid') : $t('troubleshooting.winuhid_mouse_sendinput') }}</dd>
+              </dl>
+              <dl class="virtualhid-license-stat">
+                <dt>{{ $t('troubleshooting.winuhid_ps5') }}</dt>
+                <dd>{{ virtualhidLicense.ps5 ? $t('troubleshooting.winuhid_ps5_yes') : $t('troubleshooting.winuhid_ps5_no') }}</dd>
+              </dl>
+            </div>
+
+            <p class="virtualhid-license-message"
+               v-if="virtualhidLicense.message && virtualhidLicense.service_available">
+              {{ virtualhidLicense.message }}
+            </p>
+
+            <div class="virtualhid-license-toolbar">
+              <button class="btn btn-secondary"
+                      type="button"
+                      :disabled="licenseBusy"
+                      @click="refreshLicenseStatus">
+                <refresh-cw :size="18" :class="{ 'driver-release-spinning': licenseBusy }"></refresh-cw>
+                {{ $t('troubleshooting.winuhid_refresh') }}
+              </button>
+            </div>
+          </div>
+
+          <div v-else>
           <div class="virtualhid-license-heading">
             <div>
               <h3 id="virtualhid-license" class="h4 mb-1">{{ $t('troubleshooting.virtualhid_license') }}</h3>
@@ -273,6 +309,7 @@
               <strong>{{ $t('troubleshooting.virtualhid_license_machine_activated') }}</strong>
               <p class="mb-0">{{ $t('troubleshooting.virtualhid_license_machine_activated_desc') }}</p>
             </div>
+          </div>
           </div>
         </section>
       </div>
@@ -509,10 +546,14 @@
             supported_versions: '',
           },
           virtualhidLicense: {
+            backend: 'winuhid',
             operation_ok: false,
             service_available: false,
             state: 'unavailable',
             licensed: false,
+            interface_version: 0,
+            mouse: false,
+            ps5: false,
             active_devices: 0,
             activation_limit: 0,
             activation_usage: 0,
@@ -525,7 +566,7 @@
           virtualhidRelease: {
             loading: false,
             version: '',
-            url: 'https://github.com/LizardByte/libvirtualhid/releases/latest',
+            url: 'https://github.com/cgutman/WinUHid',
             error: false,
           },
           vigembus: {
@@ -834,11 +875,6 @@
          */
         refreshDriverReleases() {
           this.updateLatestRelease(
-            'virtualhidRelease',
-            'LizardByte/libvirtualhid',
-            'https://github.com/LizardByte/libvirtualhid/releases/latest',
-          );
-          this.updateLatestRelease(
             'vigembusRelease',
             'nefarius/ViGEmBus',
             'https://github.com/nefarius/ViGEmBus/releases/latest',
@@ -1077,6 +1113,10 @@
             });
         },
         licenseStatusClass() {
+          if (this.virtualhidLicense.backend === 'winuhid') {
+            return this.virtualhidLicense.service_available && this.virtualhidLicense.state === 'ready' ?
+              'badge text-bg-success' : 'badge text-bg-warning';
+          }
           if (this.virtualhidLicense.state === 'licensed') {
             return 'badge text-bg-success';
           }
@@ -1086,6 +1126,11 @@
           return 'badge text-bg-secondary';
         },
         licenseStatusText() {
+          if (this.virtualhidLicense.backend === 'winuhid') {
+            return this.virtualhidLicense.state === 'ready' ?
+              this.$t('troubleshooting.winuhid_ready') :
+              this.$t('troubleshooting.winuhid_unavailable');
+          }
           const key = `troubleshooting.virtualhid_license_state_${this.virtualhidLicense.state}`;
           return this.$t(key);
         },

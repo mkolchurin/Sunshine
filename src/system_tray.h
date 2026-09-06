@@ -7,12 +7,6 @@
 // standard includes
 #include <string>
 
-#ifdef _WIN32
-namespace lvh {
-  struct LicenseStatus;
-}
-#endif
-
 /**
  * @brief Handles the system tray icon and notification system.
  */
@@ -116,15 +110,7 @@ namespace system_tray {
 
 #ifdef _WIN32
   /**
-   * @brief Update the Virtual HID Driver license submenu and optional notification.
-   *
-   * @param license Latest machine license details.
-   * @param notify_if_unlicensed Whether to notify the user when the machine is not activated.
-   */
-  void update_tray_virtualhid_license(const lvh::LicenseStatus &license, bool notify_if_unlicensed);
-
-  /**
-   * @brief Query the Virtual HID Driver license and prepare the startup tray state.
+   * @brief Query WinUHid and prepare the startup tray submenu (no Polar license).
    */
   void prepare_tray_virtualhid_license();
 #endif

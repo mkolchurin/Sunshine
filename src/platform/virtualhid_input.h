@@ -107,7 +107,7 @@ namespace platf::virtualhid {
    * @param fallback_vigem_available Whether Windows ViGEm fallback can create gamepads.
    * @return Supported gamepad choices.
    */
-  std::vector<supported_gamepad_t> supported_gamepads(lvh::Runtime *runtime, bool fallback_vigem_available = false);
+  std::vector<supported_gamepad_t> supported_gamepads(lvh::Runtime *runtime, bool fallback_vigem_available = false, bool fallback_winuhid_ps5 = false);
 
   /**
    * @brief Allocate a libvirtualhid gamepad.

@@ -28,9 +28,9 @@
 #include <Simple-Web-Server/server_https.hpp>
 
 #ifdef _WIN32
-  #include "platform/virtualhid_input.h"
   #include "platform/windows/misc.h"
   #include "platform/windows/utf_utils.h"
+  #include "platform/windows/winuhid.h"
 
   #include <Windows.h>
 #endif
@@ -82,14 +82,15 @@ namespace confighttp {
   using https_handler_t = std::function<void(resp_https_t, req_https_t)>;
 
   namespace {
+#if !defined(_WIN32) || defined(SUNSHINE_TESTS)
     using license_status_provider_t = std::function<lvh::LicenseResult()>;  ///< Provider for the current libvirtualhid license status.
 
     /**
      * @brief Return the current libvirtualhid license status provider.
      *
      * Unit-test builds expose a mutable provider so the HTTP fixture can avoid
-     * contacting an installed Windows broker. Production builds keep the
-     * provider const and always call libvirtualhid directly.
+     * contacting an installed Windows broker. Production Windows uses WinUHid
+     * and does not call this provider.
      *
      * @return License status provider for the current build.
      */
@@ -101,6 +102,7 @@ namespace confighttp {
 #endif
       return status_provider;
     }
+#endif
   }  // namespace
 
   /**
@@ -176,6 +178,7 @@ namespace confighttp {
   constexpr auto CSRF_TOKEN_LIFETIME = std::chrono::hours(1);  // Tokens valid for 1 hour
 
   constexpr auto LIBVIRTUALHID_MINIMUM_VERSION = "2026.829.2338.54"sv;  ///< Minimum supported libvirtualhid driver version.  // NOSONAR(cpp:S1313): not an IP address
+  constexpr auto WINUHID_MINIMUM_VERSION = "1"sv;  ///< Minimum WinUHid enumerator interface version.
   constexpr auto VIGEMBUS_MINIMUM_VERSION = "1.17.0.0"sv;  ///< Minimum supported ViGEmBus fallback driver version.  // NOSONAR(cpp:S1313): not an IP address
 
   /**
@@ -323,13 +326,48 @@ namespace confighttp {
      * @param response HTTP response object.
      * @param request Authenticated HTTP request.
      */
+#ifdef _WIN32
+    nlohmann::json build_winuhid_status() {
+      const auto status = platf::winuhid::status();
+      nlohmann::json output_tree;
+      output_tree["backend"] = "winuhid";
+      output_tree["operation_ok"] = true;
+      output_tree["service_available"] = status.dlls;
+      output_tree["state"] = status.dlls && status.interface_version > 0 ? "ready" : "unavailable";
+      output_tree["licensed"] = true;
+      output_tree["interface_version"] = status.interface_version;
+      output_tree["mouse"] = status.mouse;
+      output_tree["ps5"] = status.ps5;
+      output_tree["active_devices"] = 0;
+      output_tree["activation_limit"] = 0;
+      output_tree["activation_usage"] = 0;
+      output_tree["plan_name"] = "";
+      output_tree["customer_email"] = "";
+      output_tree["purchase_url"] = "";
+      output_tree["manage_account_url"] = "";
+      output_tree["error"] = "";
+      if (!status.dlls) {
+        output_tree["message"] = "WinUHid libraries were not found";
+      } else if (status.interface_version == 0) {
+        output_tree["message"] = "WinUHid driver is not responding";
+      } else {
+        output_tree["message"] = "";
+      }
+      return output_tree;
+    }
+#endif
+
     void get_virtual_input_license(const resp_https_t &response, const req_https_t &request) {
       if (!authenticate(response, request)) {
         return;
       }
 
       print_req(request);
+#ifdef _WIN32
+      send_response(response, build_winuhid_status());
+#else
       send_response(response, build_virtualhid_license_status(virtual_input_license_status_provider()()));
+#endif
     }
   }  // namespace
 
@@ -426,7 +464,7 @@ namespace confighttp {
    *
    * @return Driver version string, or empty when unavailable.
    */
-  std::string read_libvirtualhid_driver_version() {
+  [[maybe_unused]] std::string read_libvirtualhid_driver_version() {
     registry_key_t root_key;
     if (RegOpenKeyExW(HKEY_LOCAL_MACHINE, L"SYSTEM\\CurrentControlSet\\Enum\\ROOT\\LIBVIRTUALHID", 0, KEY_READ, root_key.put()) != ERROR_SUCCESS) {
       return {};
@@ -1887,29 +1925,16 @@ namespace confighttp {
    */
   nlohmann::json get_virtualhid_driver_status() {
 #ifdef _WIN32
-    const auto version_str = read_libvirtualhid_driver_version();
-    const auto driver_detected = !version_str.empty();
-    auto output_tree = build_driver_status(driver_detected, version_str, LIBVIRTUALHID_MINIMUM_VERSION);
-    bool requires_installed_driver = true;
-    std::string backend_name;
-    std::string runtime_error_message;
-
-    try {
-      const auto runtime = platf::virtualhid::create_runtime();
-      if (runtime) {
-        const auto &capabilities = runtime->capabilities();
-        backend_name = capabilities.backend_name;
-        requires_installed_driver = capabilities.requires_installed_driver;
-        output_tree = build_driver_status(driver_detected || capabilities.supports_gamepad, version_str, LIBVIRTUALHID_MINIMUM_VERSION);
-      }
-    } catch (const std::bad_alloc &exception) {
-      runtime_error_message = exception.what();
-    }
-
-    output_tree["backend_name"] = backend_name;
-    output_tree["requires_installed_driver"] = requires_installed_driver;
-    if (!runtime_error_message.empty()) {
-      output_tree["error"] = runtime_error_message;
+    const auto status = platf::winuhid::status();
+    const auto version_str = status.interface_version > 0 ? std::to_string(status.interface_version) : std::string {};
+    const auto installed = status.dlls && status.interface_version > 0;
+    auto output_tree = build_driver_status(installed, version_str, WINUHID_MINIMUM_VERSION);
+    output_tree["backend_name"] = "winuhid";
+    output_tree["requires_installed_driver"] = true;
+    output_tree["mouse"] = status.mouse;
+    output_tree["ps5"] = status.ps5;
+    if (!status.dlls) {
+      output_tree["error"] = "WinUHid DLLs not found next to sunshine.exe";
     }
 #else
     auto output_tree = build_driver_status(false, "", LIBVIRTUALHID_MINIMUM_VERSION);
@@ -1971,7 +1996,7 @@ namespace confighttp {
   }
 
   /**
-   * @brief Get the current libvirtualhid machine license status.
+   * @brief Get WinUHid status on Windows, or the libvirtualhid Polar license on other platforms.
    *
    * @param response HTTP response object.
    * @param request Authenticated HTTP request.
@@ -1985,9 +2010,11 @@ namespace confighttp {
   /**
    * @brief Activate, validate, or deactivate the libvirtualhid machine license.
    *
-   * Submitted license keys are used only for the synchronous broker call. They are
-   * never logged or saved in Sunshine's configuration, and extracted mutable copies
-   * are overwritten before the handler returns.
+   * On Windows this fork uses WinUHid: `validate` returns WinUHid status;
+   * `activate` / `deactivate` are rejected (no Polar key).
+   *
+   * Submitted Polar license keys (non-Windows) are used only for the synchronous
+   * broker call. They are never logged or saved in Sunshine's configuration.
    *
    * @param response HTTP response object.
    * @param request Authenticated HTTP request with a JSON action.
@@ -2011,6 +2038,17 @@ namespace confighttp {
       auto input_tree = nlohmann::json::parse(content);
       const auto action = input_tree.value("action", "");
 
+#ifdef _WIN32
+      if (action == "validate") {
+        send_response(response, build_winuhid_status());
+        return;
+      }
+      if (action == "activate" || action == "deactivate") {
+        bad_request(response, request, "WinUHid has no Polar license");
+        return;
+      }
+      bad_request(response, request, "Unknown license action");
+#else
       lvh::LicenseResult result;
       if (action == "activate") {
         auto license_key = input_tree.value("license_key", "");
@@ -2031,15 +2069,8 @@ namespace confighttp {
         return;
       }
 
-#if defined(_WIN32) && defined(SUNSHINE_TRAY) && SUNSHINE_TRAY >= 1
-      system_tray::update_tray_virtualhid_license(result.license, false);
-#endif
-#ifdef _WIN32
-      if (result.status.ok()) {
-        input::refresh_virtual_input();
-      }
-#endif
       send_response(response, build_virtualhid_license_status(result));
+#endif
     } catch (const nlohmann::json::exception &) {
       bad_request(response, request, "Invalid license request");
     }

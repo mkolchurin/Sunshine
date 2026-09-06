@@ -14,6 +14,7 @@
 #include <format>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <tuple>
 
@@ -22,9 +23,6 @@
 
   // lib includes
   #include <tray.h>
-  #ifdef _WIN32
-    #include <libvirtualhid/license.hpp>
-  #endif
 
   // local includes
   #include <src/system_tray.h>
@@ -76,45 +74,6 @@ namespace {
   }
   #endif
 
-  #ifdef _WIN32
-  /**
-   * @brief Verify the persistent Virtual HID Driver benefits submenu.
-   *
-   * @param benefits_menu Benefits submenu to verify.
-   */
-  void verify_virtualhid_benefits_menu(const struct tray_menu *benefits_menu) {
-    ASSERT_NE(benefits_menu, nullptr);
-    EXPECT_STREQ(benefits_menu[0].text, "Xbox One, Xbox Series, DualSense (DS5), Switch Pro, and Generic");
-    EXPECT_EQ(benefits_menu[0].disabled, 1);
-    EXPECT_STREQ(benefits_menu[1].text, "Raw Input keyboard and mouse for physical-style input");
-    EXPECT_EQ(benefits_menu[1].disabled, 1);
-    EXPECT_STREQ(benefits_menu[2].text, "Motion, touchpads, LEDs, and adaptive triggers where supported");
-    EXPECT_EQ(benefits_menu[2].disabled, 1);
-    EXPECT_STREQ(benefits_menu[3].text, "Actively developed and supported by LizardByte");
-    EXPECT_EQ(benefits_menu[3].disabled, 1);
-    EXPECT_STREQ(benefits_menu[4].text, "-");
-    EXPECT_STREQ(benefits_menu[5].text, "Open License Settings");
-    EXPECT_NE(benefits_menu[5].cb, nullptr);
-    EXPECT_EQ(benefits_menu[6].text, nullptr);
-  }
-
-  /**
-   * @brief Verify the shared action entries in a populated Virtual HID Driver menu.
-   *
-   * @param license_menu License submenu to verify.
-   * @param benefits_index Index of the shared benefits action.
-   */
-  void verify_virtualhid_actions_menu(const struct tray_menu *license_menu, std::size_t benefits_index) {
-    ASSERT_NE(license_menu, nullptr);
-    EXPECT_STREQ(license_menu[benefits_index].text, "Virtual HID Driver Benefits");
-    EXPECT_EQ(license_menu[benefits_index].cb, nullptr);
-    verify_virtualhid_benefits_menu(license_menu[benefits_index].submenu);
-    EXPECT_STREQ(license_menu[benefits_index + 1U].text, "Download Virtual HID Driver");
-    EXPECT_NE(license_menu[benefits_index + 1U].cb, nullptr);
-    EXPECT_EQ(license_menu[benefits_index + 2U].text, nullptr);
-  }
-  #endif
-
   /**
    * @brief Verify the persistent menu exposed by Sunshine.
    */
@@ -128,19 +87,14 @@ namespace {
     EXPECT_EQ(tray_data.menu[1].cb, nullptr);
 
   #ifdef _WIN32
-    EXPECT_STREQ(tray_data.menu[2].text, "Virtual HID Driver");
+    EXPECT_STREQ(tray_data.menu[2].text, "WinUHid");
     ASSERT_NE(tray_data.menu[2].submenu, nullptr);
     EXPECT_STREQ(tray_data.menu[2].submenu[0].text, "Status: Checking");
     EXPECT_EQ(tray_data.menu[2].submenu[0].disabled, 1);
     EXPECT_STREQ(tray_data.menu[2].submenu[1].text, "-");
-    EXPECT_STREQ(tray_data.menu[2].submenu[2].text, "Open License Settings");
+    EXPECT_STREQ(tray_data.menu[2].submenu[2].text, "Open Troubleshooting");
     EXPECT_NE(tray_data.menu[2].submenu[2].cb, nullptr);
-    EXPECT_STREQ(tray_data.menu[2].submenu[3].text, "Virtual HID Driver Benefits");
-    EXPECT_EQ(tray_data.menu[2].submenu[3].cb, nullptr);
-    verify_virtualhid_benefits_menu(tray_data.menu[2].submenu[3].submenu);
-    EXPECT_STREQ(tray_data.menu[2].submenu[4].text, "Download Virtual HID Driver");
-    EXPECT_NE(tray_data.menu[2].submenu[4].cb, nullptr);
-    EXPECT_EQ(tray_data.menu[2].submenu[5].text, nullptr);
+    EXPECT_EQ(tray_data.menu[2].submenu[3].text, nullptr);
     EXPECT_STREQ(tray_data.menu[3].text, "-");
     EXPECT_STREQ(tray_data.menu[4].text, "Donate");
     ASSERT_NE(tray_data.menu[4].submenu, nullptr);
@@ -318,111 +272,24 @@ TEST_F(SystemTrayTest, ResolvesDevelopmentTrayIconsFromExecutableDirectory) {
   EXPECT_TRUE(std::filesystem::exists(virtualhid_icon));
 }
 
-TEST_F(SystemTrayTest, PreparesVirtualHidMenuFromCurrentLicenseStatus) {
+TEST_F(SystemTrayTest, PreparesWinUHidMenuWithoutPolarLicense) {
   system_tray::prepare_tray_virtualhid_license();
 
   const auto &tray_data = system_tray::tray_data_for_testing();
   ASSERT_NE(tray_data.menu[2].submenu, nullptr);
   ASSERT_NE(tray_data.menu[2].submenu[0].text, nullptr);
   EXPECT_STRNE(tray_data.menu[2].submenu[0].text, "Status: Checking");
-}
-
-TEST_F(SystemTrayTest, PreparesLicensedVirtualHidMenuBeforeInitialization) {
-  lvh::LicenseStatus license;
-  license.service_available = true;
-  license.state = lvh::LicenseState::licensed;
-  license.plan_name = "Yearly";
-  license.customer_email = "customer@example.com";
-  license.activation_usage = 2;
-  license.activation_limit = 5;
-
-  system_tray::update_tray_virtualhid_license(license, true);
-
-  const auto &tray_data = system_tray::tray_data_for_testing();
-  const auto *license_menu = tray_data.menu[2].submenu;
-  ASSERT_NE(license_menu, nullptr);
-  EXPECT_STREQ(license_menu[0].text, "Status: Licensed");
-  EXPECT_STREQ(license_menu[1].text, "Plan: Yearly");
-  EXPECT_STREQ(license_menu[2].text, "Customer: customer@example.com");
-  EXPECT_STREQ(license_menu[3].text, "Machine activations: 2 / 5");
-  EXPECT_STREQ(license_menu[4].text, "-");
-  EXPECT_STREQ(license_menu[5].text, "View License Details");
-  EXPECT_NE(license_menu[5].cb, nullptr);
-  EXPECT_STREQ(license_menu[6].text, "Manage License");
-  EXPECT_NE(license_menu[6].cb, nullptr);
-  verify_virtualhid_actions_menu(license_menu, 7U);
-  EXPECT_EQ(tray_data.notification_title, nullptr);
-  EXPECT_EQ(tray_data.notification_text, nullptr);
-  EXPECT_EQ(tray_data.notification_cb, nullptr);
-
-  license.plan_name.clear();
-  license.customer_email.clear();
-  license.activation_usage = 0;
-  license.activation_limit = 0;
-  system_tray::update_tray_virtualhid_license(license, false);
-
-  EXPECT_STREQ(license_menu[1].text, "This machine is activated");
-  EXPECT_STREQ(license_menu[2].text, "Customer: Not reported");
-  EXPECT_STREQ(license_menu[3].text, "Machine activations: Not reported");
-}
-
-/**
- * @brief License-state fixture for the Windows Virtual HID Driver tray menu.
- */
-class UnlicensedVirtualHidTrayTest:
-    public SystemTrayTest,
-    public testing::WithParamInterface<std::tuple<lvh::LicenseState, const char *, const char *, bool>> {};
-
-TEST_P(UnlicensedVirtualHidTrayTest, PreparesMenuAndStartupNotification) {
-  const auto &[state, state_label, state_detail, service_available] = GetParam();
-  lvh::LicenseStatus license;
-  license.service_available = service_available;
-  license.state = state;
-
-  system_tray::update_tray_virtualhid_license(license, true);
-
-  const auto &tray_data = system_tray::tray_data_for_testing();
-  const auto *license_menu = tray_data.menu[2].submenu;
-  ASSERT_NE(license_menu, nullptr);
-  EXPECT_STREQ(license_menu[0].text, std::format("Status: {}", state_label).c_str());
-  EXPECT_STREQ(license_menu[1].text, state_detail);
-  EXPECT_STREQ(license_menu[2].text, "Driver-backed keyboard, mouse, and gamepads are locked");
-  EXPECT_STREQ(license_menu[3].text, service_available ? "License service: Available" : "License service: Unavailable");
-  EXPECT_STREQ(license_menu[4].text, "Activate this machine to use Virtual HID Driver");
-  EXPECT_STREQ(license_menu[5].text, "-");
-  EXPECT_STREQ(license_menu[6].text, "Activate License");
-  EXPECT_NE(license_menu[6].cb, nullptr);
-  EXPECT_STREQ(license_menu[7].text, "Buy License");
-  EXPECT_NE(license_menu[7].cb, nullptr);
-  verify_virtualhid_actions_menu(license_menu, 8U);
-  EXPECT_STREQ(tray_data.notification_title, "Activate Virtual HID Driver");
-  EXPECT_STREQ(
-    tray_data.notification_text,
-    "Adds a Raw Input keyboard and mouse plus Xbox One/Series, DualSense (DS5), Switch Pro, and Generic gamepads. Actively maintained by LizardByte. Click to activate or buy a license; details remain in the tray menu."
+  EXPECT_TRUE(
+    std::string_view {tray_data.menu[2].submenu[0].text} == "Status: Ready" ||
+    std::string_view {tray_data.menu[2].submenu[0].text} == "Status: Unavailable"
   );
-  EXPECT_STREQ(tray_data.notification_icon, tray_data.allIconPaths[4]);
-  EXPECT_NE(tray_data.notification_cb, nullptr);
-
-  system_tray::resolve_tray_icon_paths_for_testing();
-  EXPECT_STREQ(tray_data.notification_icon, tray_data.allIconPaths[4]);
-
-  system_tray::update_tray_virtualhid_license(license, false);
+  EXPECT_STREQ(tray_data.menu[2].submenu[5].text, "Open Troubleshooting");
+  EXPECT_NE(tray_data.menu[2].submenu[5].cb, nullptr);
   EXPECT_EQ(tray_data.notification_title, nullptr);
   EXPECT_EQ(tray_data.notification_text, nullptr);
   EXPECT_EQ(tray_data.notification_cb, nullptr);
 }
 
-INSTANTIATE_TEST_SUITE_P(
-  LicenseStates,
-  UnlicensedVirtualHidTrayTest,
-  testing::Values(
-    std::tuple {lvh::LicenseState::unavailable, "Unavailable", "The local license service is unavailable", false},
-    std::tuple {lvh::LicenseState::unlicensed, "Not Activated", "No license is active on this machine", true},
-    std::tuple {lvh::LicenseState::expired, "Expired", "The license on this machine has expired", true},
-    std::tuple {lvh::LicenseState::disabled, "Disabled", "The license on this machine is disabled", true},
-    std::tuple {lvh::LicenseState::invalid, "Invalid", "The license on this machine is invalid", true}
-  )
-);
   #endif
 
   #ifndef _WIN32

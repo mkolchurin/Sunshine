@@ -539,21 +539,22 @@ namespace platf::virtualhid {
     return gamepads;
   }
 
-  std::vector<supported_gamepad_t> supported_gamepads(lvh::Runtime *runtime, bool fallback_vigem_available) {
+  std::vector<supported_gamepad_t> supported_gamepads(lvh::Runtime *runtime, bool fallback_vigem_available, bool fallback_winuhid_ps5) {
     if (!runtime) {
       return static_supported_gamepads();
     }
 
     const auto libvirtualhid_available = runtime->capabilities().supports_gamepad;
     const auto reason = libvirtualhid_available ? "" : "gamepads.virtualhid-not-available";
-    const auto auto_enabled = libvirtualhid_available || fallback_vigem_available;
+    const auto auto_enabled = libvirtualhid_available || fallback_vigem_available || fallback_winuhid_ps5;
     std::vector gamepads {
       supported_gamepad_t {"auto", auto_enabled, auto_enabled ? "" : reason},
     };
 
     for (const auto &profile : gamepad_profiles) {
       const auto fallback_supported = fallback_vigem_available && (profile.name == "x360"sv || profile.name == "ds4"sv);
-      const auto enabled = libvirtualhid_available || fallback_supported;
+      const auto winuhid_supported = fallback_winuhid_ps5 && profile.name == "ds5"sv;
+      const auto enabled = libvirtualhid_available || fallback_supported || winuhid_supported;
       gamepads.emplace_back(std::string {profile.name}, enabled, enabled ? "" : reason);
     }
 
@@ -1008,14 +1009,17 @@ namespace platf {
   }
 #endif
 
+#ifndef _WIN32
   void move_mouse(input_t &input, int deltaX, int deltaY) {
     virtualhid::move_mouse(virtualhid::get_input_context(input), deltaX, deltaY);
   }
+#endif
 
   void abs_mouse(input_t &input, const touch_port_t &touch_port, float x, float y) {
     virtualhid::abs_mouse(virtualhid::get_input_context(input), touch_port, x, y);
   }
 
+#ifndef _WIN32
   void button_mouse(input_t &input, int button, bool release) {
     virtualhid::button_mouse(virtualhid::get_input_context(input), button, release);
   }
@@ -1027,6 +1031,7 @@ namespace platf {
   void hscroll(input_t &input, int high_res_distance) {
     virtualhid::hscroll(virtualhid::get_input_context(input), high_res_distance);
   }
+#endif
 
   void keyboard_update(input_t &input, uint16_t modcode, bool release, uint8_t flags) {
     virtualhid::keyboard_update(virtualhid::get_input_context(input), modcode, release, flags);

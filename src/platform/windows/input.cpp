@@ -31,6 +31,7 @@
 #include "src/logging.h"
 #include "src/platform/common.h"
 #include "src/platform/virtualhid_input.h"
+#include "winuhid.h"
 
 namespace platf {
   using namespace std::literals;
@@ -522,15 +523,19 @@ namespace platf {
   struct input_raw_t {
     virtualhid::input_context_t virtualhid;  ///< libvirtualhid input context.
     std::unique_ptr<vigem_t> vigem;  ///< ViGEm fallback context.
+    winuhid::mouse_t winuhid_mouse;  ///< Relative mouse: WinUHid HID, else SendInput.
+    winuhid::pads_t winuhid_pads;  ///< DualSense slots via WinUHid.
   };
 
   input_t input() {
     input_t result {new input_raw_t {}};
 
     if (auto &raw = *result; !raw.virtualhid.runtime || !raw.virtualhid.runtime->capabilities().supports_gamepad) {
-      auto vigem = std::make_unique<vigem_t>();
-      if (!vigem->init()) {
-        raw.vigem = std::move(vigem);
+      if (!winuhid::ps5_available()) {
+        auto vigem = std::make_unique<vigem_t>();
+        if (!vigem->init()) {
+          raw.vigem = std::move(vigem);
+        }
       }
     }
 
@@ -584,6 +589,22 @@ namespace platf {
     };
   }
 
+  void move_mouse(input_t &input, int deltaX, int deltaY) {
+    input->winuhid_mouse.move(deltaX, deltaY);
+  }
+
+  void button_mouse(input_t &input, int button, bool release) {
+    input->winuhid_mouse.button(button, release);
+  }
+
+  void scroll(input_t &input, int high_res_distance) {
+    input->winuhid_mouse.scroll(high_res_distance, false);
+  }
+
+  void hscroll(input_t &input, int high_res_distance) {
+    input->winuhid_mouse.scroll(high_res_distance, true);
+  }
+
   /**
    * @brief Per-client virtual devices for touch and pen input.
    */
@@ -612,15 +633,42 @@ namespace platf {
     return static_cast<client_input_raw_t *>(input)->virtualhid;
   }
 
+  /**
+   * @brief Return whether this client should be emulated as a DualSense via WinUHid.
+   *
+   * @param metadata Client-reported controller metadata.
+   * @return True when F2 should call `WinUHidPS5Create`.
+   */
+  bool want_winuhid_ps5(const gamepad_arrival_t &metadata) {
+    if (config::input.gamepad == "ds5"sv) {
+      return true;
+    }
+    if (config::input.gamepad != "auto"sv) {
+      return false;
+    }
+    if (metadata.type == LI_CTYPE_PS) {
+      return true;
+    }
+    if (config::input.motion_as_ds4 && (metadata.capabilities & (LI_CCAP_ACCEL | LI_CCAP_GYRO))) {
+      return true;
+    }
+    if (config::input.touchpad_as_ds4 && (metadata.capabilities & LI_CCAP_TOUCHPAD)) {
+      return true;
+    }
+    return false;
+  }
+
   int alloc_gamepad(input_t &input, const gamepad_id_t &id, const gamepad_arrival_t &metadata, feedback_queue_t feedback_queue) {
     auto raw = (input_raw_t *) input.get();
 
-    if (virtualhid::alloc_gamepad(raw->virtualhid, id, metadata, feedback_queue) == 0) {
-      return 0;
+    if (want_winuhid_ps5(metadata) && winuhid::ps5_available()) {
+      if (raw->winuhid_pads.alloc(id, feedback_queue) == 0) {
+        return 0;
+      }
     }
 
     if (!vigem_fallback_allowed()) {
-      BOOST_LOG(warning) << "libvirtualhid could not create the requested gamepad profile, and ViGEm fallback cannot emulate "sv << config::input.gamepad;
+      BOOST_LOG(warning) << "WinUHid could not create the requested gamepad profile, and ViGEm fallback cannot emulate "sv << config::input.gamepad;
       return -1;
     }
 
@@ -678,6 +726,10 @@ namespace platf {
   int rebind_gamepad(input_t &input, const gamepad_id_t &id, feedback_queue_t feedback_queue) {
     auto raw = (input_raw_t *) input.get();
 
+    if (raw->winuhid_pads.has(id.globalIndex)) {
+      return raw->winuhid_pads.rebind(id, std::move(feedback_queue));
+    }
+
     if (virtualhid::has_gamepad(raw->virtualhid, id.globalIndex)) {
       return virtualhid::rebind_gamepad(raw->virtualhid, id, std::move(feedback_queue));
     }
@@ -691,6 +743,11 @@ namespace platf {
 
   void free_gamepad(input_t &input, int nr) {
     auto raw = (input_raw_t *) input.get();
+
+    if (raw->winuhid_pads.has(nr)) {
+      raw->winuhid_pads.free(nr);
+      return;
+    }
 
     if (virtualhid::has_gamepad(raw->virtualhid, nr)) {
       virtualhid::free_gamepad(raw->virtualhid, nr);
@@ -956,6 +1013,10 @@ namespace platf {
    */
   void gamepad_update(input_t &input, int nr, const gamepad_state_t &gamepad_state) {
     auto raw = (input_raw_t *) input.get();
+    if (auto *pad = raw->winuhid_pads.get(nr)) {
+      pad->update(gamepad_state);
+      return;
+    }
     if (virtualhid::has_gamepad(raw->virtualhid, nr)) {
       virtualhid::gamepad_update(raw->virtualhid, nr, gamepad_state);
       return;
@@ -994,6 +1055,10 @@ namespace platf {
    */
   void gamepad_touch(input_t &input, const gamepad_touch_t &touch) {
     auto raw = (input_raw_t *) input.get();
+    if (auto *pad = raw->winuhid_pads.get(touch.id.globalIndex)) {
+      pad->touch(touch);
+      return;
+    }
     if (virtualhid::has_gamepad(raw->virtualhid, touch.id.globalIndex)) {
       virtualhid::gamepad_touch(raw->virtualhid, touch);
       return;
@@ -1106,6 +1171,10 @@ namespace platf {
    */
   void gamepad_motion(input_t &input, const gamepad_motion_t &motion) {
     auto raw = (input_raw_t *) input.get();
+    if (auto *pad = raw->winuhid_pads.get(motion.id.globalIndex)) {
+      pad->motion(motion);
+      return;
+    }
     if (virtualhid::has_gamepad(raw->virtualhid, motion.id.globalIndex)) {
       virtualhid::gamepad_motion(raw->virtualhid, motion);
       return;
@@ -1139,6 +1208,10 @@ namespace platf {
    */
   void gamepad_battery(input_t &input, const gamepad_battery_t &battery) {
     auto raw = (input_raw_t *) input.get();
+    if (auto *pad = raw->winuhid_pads.get(battery.id.globalIndex)) {
+      pad->battery(battery);
+      return;
+    }
     if (virtualhid::has_gamepad(raw->virtualhid, battery.id.globalIndex)) {
       virtualhid::gamepad_battery(raw->virtualhid, battery);
       return;
@@ -1223,7 +1296,7 @@ namespace platf {
     }
 
     const auto raw = (input_raw_t *) input->get();
-    gps = virtualhid::supported_gamepads(raw->virtualhid.runtime.get(), raw->vigem != nullptr);
+    gps = virtualhid::supported_gamepads(raw->virtualhid.runtime.get(), raw->vigem != nullptr, winuhid::ps5_available());
     return gps;
   }
 
